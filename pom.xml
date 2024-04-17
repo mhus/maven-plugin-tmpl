@@ -36,6 +36,27 @@
         <gpg.plugin.version>3.1.0</gpg.plugin.version>
     </properties>
 
+    <inceptionYear>2024</inceptionYear>
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <scm>
+        <url>https://github.com/mhus/maven-plugin-tmpl</url>
+        <connection>scm:git:https://github.com/mhus/maven-plugin-tmpl/</connection>
+        <tag>HEAD</tag>
+    </scm>
+    <developers>
+        <developer>
+            <id>mhu</id>
+            <name>Mike Hummel</name>
+            <email>mh@mhus.de</email>
+            <url>http://www.mhus.de</url>
+        </developer>
+    </developers>
     <dependencies>
 
         <dependency>
