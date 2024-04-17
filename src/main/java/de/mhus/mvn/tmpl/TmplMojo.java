@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.summerclouds.mvn.tmpl;
+package de.mhus.mvn.tmpl;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -24,7 +24,11 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
+import de.mhus.commons.tools.MDate;
+import de.mhus.commons.tools.MFile;
+import de.mhus.commons.tools.MString;
 import org.apache.maven.model.FileSet;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -36,11 +40,6 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.FileUtils;
 import org.stringtemplate.v4.ST;
-import org.summerclouds.common.core.log.Log;
-import org.summerclouds.common.core.log.LogFactory;
-import org.summerclouds.common.core.tool.MDate;
-import org.summerclouds.common.core.tool.MFile;
-import org.summerclouds.common.core.tool.MString;
 
 @Mojo(
         name = "tmpl",
@@ -55,10 +54,12 @@ public class TmplMojo extends AbstractMojo {
 //        ((IApiInternal) MApi.get()).setLogFactory(new MavenPluginLogFactory(this));
 //    }
 
-    private Log log = Log.getLog(TmplMojo.class);
+    private static Logger log = Logger.getLogger(TmplMojo.class.getName());
 
     @Parameter public String filePrefix = "";
     @Parameter public String fileSuffix = "-tmpl";
+    @Parameter public String fileExtension = ".tmpl";
+    @Parameter public String targetDir = "";
 
     /**
      * List of files to include. Specified as fileset patterns which are relative to the input
@@ -105,16 +106,28 @@ public class TmplMojo extends AbstractMojo {
 
         for (File file : list) {
             if (file.getPath().contains("/.")) continue;
-            log.d("scan", file);
+            log.fine("scan " + file);
             String name = MFile.getFileNameOnly(file.getName());
-            if (name.startsWith(filePrefix) && name.endsWith(fileSuffix))
+            if ((MString.isSet(filePrefix) || MString.isSet(fileSuffix)) && name.startsWith(filePrefix) && name.endsWith(fileSuffix))
                 tmplFile(
                         file,
-                        new File(file.getParent(),
+                        new File(getParent(file.getParent()),
 	                        name.substring(filePrefix.length(), name.length() - fileSuffix.length())
 	                                + "."
 	                                + MFile.getFileExtension(file)));
+            else
+            if (MString.isSet(fileExtension) && file.getName().endsWith(fileExtension))
+                tmplFile(file, new File(getParent(file.getParent()), file.getName().substring(0, file.getName().length() - fileExtension.length()) ));
         }
+    }
+
+    private File getParent(String parent) {
+        if (MString.isSet(targetDir)) {
+            String baseDir = files == null ?  project.getBasedir().getAbsolutePath() : files.getDirectory();
+            String deltaDir = parent.substring(baseDir.length());
+            return new File(targetDir + "/" + deltaDir);
+        }
+        return new File(parent);
     }
 
     private void putParameter(Object k, Object v) {
@@ -148,23 +161,20 @@ public class TmplMojo extends AbstractMojo {
 
     private void tmplFile(File from, File to) {
         try {
-            log.i("TMPL", from, to);
+            log.info("TMPL " + from + " " + to);
             ST template = new ST(MFile.readFile(from, charset), startChar , endChar );
             parameters.forEach((k,v) -> template.add(k, v));
             template.add("from_name", from.getName());
             template.add("to_name", to.getName());
             template.add("now_datetime", MDate.toIsoDate(now));
             template.add("now_date", MDate.toIsoDateTime(now));
-            if (log.isLevelEnabled(Log.LEVEL.DEBUG))
-            	log.d("tmpl attributes",template.getAttributes());
+            log.fine("tmpl attributes " + template.getAttributes());
             String content = template.render();
             FileOutputStream os = new FileOutputStream(to);
             MFile.writeFile(os, content, charset);
             os.close();
         } catch (Throwable e) {
-        	log.w("Failed", e.toString());
-        	if (log.isLevelEnabled(Log.LEVEL.DEBUG))
-        		log.d("Exception", e);
+        	log.warning("Failed " +  e.toString());
         }
     }
 

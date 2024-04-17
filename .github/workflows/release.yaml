@@ -1,0 +1,125 @@
+#
+# Copyright (C) 2002 Mike Hummel (mh@mhus.de)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+name: release
+
+on:
+  workflow_dispatch:
+
+jobs:
+
+  release:
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4.1.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          server-id: ossrh
+          server-username: OSSRH_USERNAME
+          server-password: OSSRH_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: GPG_PASSPHRASE
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: find next release version
+        id: find-next-release-version
+        run: |
+          mkdir target
+          mvn -B --fail-at-end -Pdeploy -Prelease 'de.mhus.mvn.plugin:versioning-maven-plugin:1.0.2:next-release-version'
+          echo "RELEASE_VERSION=$(cat target/release-version.txt)"
+          echo "RELEASE_VERSION=$(cat target/release-version.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: set release version to pom.xml
+        run: mvn -B --fail-at-end -Pdeploy -Prelease versions:set -DnewVersion=${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}
+
+      - name: create release nodes
+        if: ${{ !endsWith(steps.find-next-release-version.outputs.RELEASE_VERSION, '.0') }}
+        id: create-release-notes
+        run: |
+          lastRelease=$(git log --all --pretty=format:"%ad|%s"|grep -e '|Release:'|cut -d \| -f 1|head -1)
+          if [ ! -z $lastRelease ]; then
+            since="--since=\"$lastRelease\""
+          fi
+          releaseNotes=$(git log --all $since --pretty=format:"%s"|grep -e '^fix:' -e '^feat:'|sed -e 's/^/* /')
+          echo $releaseNotes > docs/releases/release-${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}.md
+          echo "* [${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}](release-${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}.md)" >> docs/releases/README.md
+          echo "RELEASE_NOTES<<EOF" >> "$GITHUB_OUTPUT"
+          echo $releaseNotes >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          git add docs/releases/release-${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}.md
+
+      - name: compile before release
+        run: mvn -B -U --fail-at-end -Pdeploy -Prelease clean install
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: deploy release
+        run: mvn -B --fail-at-end -Pdeploy -Prelease deploy
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+
+      - name: commit release
+        run: |
+          topic="Hotfix"
+          minor=$(echo ${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}|cut -d . -f 2)
+          if [ "$minor" = "0" ]; then
+            topic="Release"
+          fi
+          git config --global user.name 'Robot'
+          git config --global user.email 'mhus@users.noreply.github.com'
+          git commit -am "$topic: ${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}"
+          git push
+
+      - name: Create Release Tag
+        id: create_release
+        uses: actions/create-release@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: ${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}
+          release_name: Release ${{ steps.find-next-release-version.outputs.RELEASE_VERSION }}
+          body: |
+            ${{ steps.create-release-notes.outputs.RELEASE_NOTES }}
+          draft: false
+          prerelease: false
+
+      - name: Find next snapshot version
+        id: find-next-snapshot-version
+        run: |
+          mvn -B --fail-at-end -Pdeploy -Prelease 'de.mhus.mvn.plugin:versioning-maven-plugin:1.0.3:next-snapshot-version'
+          echo "SNAPSHOT_VERSION=$(cat target/snapshot-version.txt)"
+          echo "SNAPSHOT_VERSION=$(cat target/snapshot-version.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: set snapshot version to pom.xml
+        run: mvn -B --fail-at-end -Pdeploy -Prelease versions:set -DnewVersion=${{ steps.find-next-snapshot-version.outputs.SNAPSHOT_VERSION }}
+
+      - name: commit snapshot
+        run: |
+          git config --global user.name 'Robot'
+          git config --global user.email 'mhus@users.noreply.github.com'
+          git commit -am "Snapshot: ${{ steps.find-next-snapshot-version.outputs.RELEASE_VERSION }}"
+          git push
+ 
+          
