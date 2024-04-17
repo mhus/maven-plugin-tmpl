@@ -24,6 +24,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.logging.Logger;
 
 import de.mhus.commons.tools.MDate;
@@ -54,12 +55,13 @@ public class TmplMojo extends AbstractMojo {
 //        ((IApiInternal) MApi.get()).setLogFactory(new MavenPluginLogFactory(this));
 //    }
 
-    private static Logger log = Logger.getLogger(TmplMojo.class.getName());
+    private static Logger LOGGER = Logger.getLogger(TmplMojo.class.getName());
 
     @Parameter public String filePrefix = "";
     @Parameter public String fileSuffix = "-tmpl";
     @Parameter public String fileExtension = ".tmpl";
     @Parameter public String targetDir = "";
+    @Parameter public boolean flattenTargetDir = false;
 
     /**
      * List of files to include. Specified as fileset patterns which are relative to the input
@@ -87,26 +89,35 @@ public class TmplMojo extends AbstractMojo {
     @Parameter
 	private String charset = Charset.defaultCharset().name();
 
+    @Parameter
+    private boolean verbose = false;
+
+
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
 
+        System.getenv().forEach((k, v) -> putParameter(k, v));
+        System.getProperties().forEach((k, v) -> putParameter(k, v));
         project.getProperties().forEach((k, v) -> putParameter(k, v));
         putParameter("project_version", project.getVersion());
         putParameter("project_groupId", project.getGroupId());
-        putParameter("project_artifact", project.getArtifactId());
+        putParameter("project_artifactId", project.getArtifactId());
         putParameter("project_name", project.getName());
         putParameter("basedir", project.getBasedir());
         if (project.getParent() != null) {
             putParameter("parent_version", project.getParent().getVersion());
             putParameter("parent_groupId", project.getParent().getGroupId());
-            putParameter("parent_artifact", project.getParent().getArtifactId());
+            putParameter("parent_artifactId", project.getParent().getArtifactId());
         }
+        if (verbose)
+            new TreeMap<>(parameters).forEach((k, v) -> LOGGER.info("Parameter: " + k + "=" + v));
 
         List<File> list = toFileList(files);
 
         for (File file : list) {
             if (file.getPath().contains("/.")) continue;
-            log.fine("scan " + file);
+            if (verbose)
+                LOGGER.info("scan " + file);
             String name = MFile.getFileNameOnly(file.getName());
             if ((MString.isSet(filePrefix) || MString.isSet(fileSuffix)) && name.startsWith(filePrefix) && name.endsWith(fileSuffix))
                 tmplFile(
@@ -124,6 +135,9 @@ public class TmplMojo extends AbstractMojo {
     private File getParent(String parent) {
         if (MString.isSet(targetDir)) {
             String baseDir = files == null ?  project.getBasedir().getAbsolutePath() : files.getDirectory();
+            if (flattenTargetDir) {
+                return new File(targetDir);
+            }
             String deltaDir = parent.substring(baseDir.length());
             return new File(targetDir + "/" + deltaDir);
         }
@@ -161,20 +175,21 @@ public class TmplMojo extends AbstractMojo {
 
     private void tmplFile(File from, File to) {
         try {
-            log.info("TMPL " + from + " " + to);
+            LOGGER.info("TMPL " + from + " " + to);
+            to.getParentFile().mkdirs();
             ST template = new ST(MFile.readFile(from, charset), startChar , endChar );
             parameters.forEach((k,v) -> template.add(k, v));
             template.add("from_name", from.getName());
             template.add("to_name", to.getName());
             template.add("now_datetime", MDate.toIsoDate(now));
             template.add("now_date", MDate.toIsoDateTime(now));
-            log.fine("tmpl attributes " + template.getAttributes());
+            LOGGER.fine("tmpl attributes " + template.getAttributes());
             String content = template.render();
             FileOutputStream os = new FileOutputStream(to);
             MFile.writeFile(os, content, charset);
             os.close();
         } catch (Throwable e) {
-        	log.warning("Failed " +  e.toString());
+        	LOGGER.warning("Failed " +  e.toString());
         }
     }
 
