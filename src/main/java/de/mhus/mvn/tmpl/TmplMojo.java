@@ -181,8 +181,8 @@ public class TmplMojo extends AbstractMojo {
             parameters.forEach((k,v) -> template.add(k, v));
             template.add("from_name", from.getName());
             template.add("to_name", to.getName());
-            template.add("now_datetime", MDate.toIsoDate(now));
-            template.add("now_date", MDate.toIsoDateTime(now));
+            template.add("now_date", MDate.toIsoDate(now));
+            template.add("now_datetime", MDate.toIsoDateTime(now));
             LOGGER.fine("tmpl attributes " + template.getAttributes());
             String content = template.render();
             FileOutputStream os = new FileOutputStream(to);
